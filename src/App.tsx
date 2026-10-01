@@ -1,6 +1,6 @@
 import { Authenticated, Refine } from "@refinedev/core";
 import {
-  RefineThemes, ThemedLayoutV2, useNotificationProvider,
+  ThemedLayoutV2, useNotificationProvider,
 } from "@refinedev/antd";
 import { dataProvider, liveProvider } from "@refinedev/supabase";
 import routerProvider, { NavigateToResource, CatchAllNavigate } from "@refinedev/react-router-v6";
@@ -8,7 +8,7 @@ import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom";
 import { ConfigProvider, App as AntApp } from "antd";
 import {
   TeamOutlined, AppstoreOutlined, SettingOutlined,
-  DashboardOutlined, UsergroupAddOutlined,
+  DashboardOutlined, UsergroupAddOutlined, IdcardOutlined,
 } from "@ant-design/icons";
 
 import "@refinedev/antd/dist/reset.css";
@@ -16,6 +16,8 @@ import "@refinedev/antd/dist/reset.css";
 import { supabaseClient } from "./supabaseClient";
 import { authProvider } from "./authProvider";
 import { RoleGuard, AdminOnly } from "./components/RoleGuard";
+import { BrandLogo } from "./components/BrandComponents";
+import { BASICS_THEME } from "./brand";
 
 // Pages
 import { Dashboard } from "./pages/dashboard";
@@ -24,6 +26,7 @@ import { ProgramList, ProgramCreate, ProgramEdit, ProgramShow } from "./pages/pr
 import { EnrollmentCreate, EnrollmentShow } from "./pages/enrollments";
 import { ContactFieldAdmin } from "./pages/admin/ContactFieldAdmin";
 import { UserManagement } from "./pages/admin/UserManagement";
+import { StaffDirectory } from "./pages/staff/StaffDirectory";
 import { LoginPage } from "./pages/auth/login";
 
 // ── AppRoutes: rendered INSIDE <Refine>, so all Refine hooks are safe here ────
@@ -34,7 +37,9 @@ const AppRoutes = () => {
       <Route
         element={
           <Authenticated key="auth" fallback={<CatchAllNavigate to="/login" />}>
-            <ThemedLayoutV2>
+            <ThemedLayoutV2
+              Title={({ collapsed }) => <BrandLogo collapsed={collapsed} />}
+            >
               <Outlet />
             </ThemedLayoutV2>
           </Authenticated>
@@ -73,6 +78,9 @@ const AppRoutes = () => {
           } />
           <Route path="show/:id" element={<ProgramShow />} />
         </Route>
+
+        {/* Staff Directory */}
+        <Route path="/staff" element={<StaffDirectory />} />
 
         {/* Enrollments */}
         <Route path="/enrollments">
@@ -117,7 +125,7 @@ const AppRoutes = () => {
 export default function App() {
   return (
     <BrowserRouter>
-      <ConfigProvider theme={RefineThemes.Blue}>
+      <ConfigProvider theme={BASICS_THEME}>
         <AntApp>
           <Refine
             dataProvider={dataProvider(supabaseClient)}
@@ -146,6 +154,11 @@ export default function App() {
                 edit: "/programs/edit/:id",
                 show: "/programs/show/:id",
                 meta: { label: "Programs", icon: <AppstoreOutlined /> },
+              },
+              {
+                name: "staff",
+                list: "/staff",
+                meta: { label: "Staff Directory", icon: <IdcardOutlined /> },
               },
               {
                 name: "enrollments",

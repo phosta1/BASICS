@@ -1,13 +1,43 @@
 // ── Core contact (base fields always present) ─────────────────────────────────
 export interface Contact {
   id: number;
-  first_name: string;
-  last_name: string;
+  // Personal Information
+  first_name: string;         // Given Name
+  last_name: string;          // Family Name
+  other_names?: string;       // Other Name(s)
+  gender?: "male" | "female" | "other";
+  date_of_birth?: string;
+  place_of_birth?: string;
   email: string;
   phone?: string;
-  company?: string;
+  address?: string;
+  // Categorisation
   status: "lead" | "active" | "inactive";
+  is_staff: boolean;          // triggers Staff Data section
   profile_picture_url?: string;
+  // Cross-reference
+  related_contact_id?: number; // link to another contact
+  created_at: string;
+}
+
+// Staff-specific fields stored in a separate table
+export interface StaffProfile {
+  id: number;
+  contact_id: number;
+  ssnit_number?: string;
+  national_id_number?: string;
+  national_id_photo_url?: string;
+  stanbic_account_number?: string;
+  certification_url?: string;
+  marital_status?: "single" | "married" | "divorced" | "widowed";
+  employment_status?: "contract" | "permanent" | "ambassador";
+  start_date?: string;
+  end_date?: string;
+  emergency_contact?: string;
+  // Screening
+  arrested_before?: boolean;
+  dismissed_for_stealing?: boolean;
+  accused_of_abuse?: boolean;
   created_at: string;
 }
 

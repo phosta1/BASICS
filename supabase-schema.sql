@@ -32,15 +32,47 @@ create trigger on_auth_user_created
 -- ── 2. Contacts (base fields) ────────────────────────────────────────────────
 create table if not exists public.contacts (
   id                   bigserial   primary key,
+  -- Personal Information
   first_name           text        not null,
   last_name            text        not null,
+  other_names          text,
+  gender               text        check (gender in ('male','female','other')),
+  date_of_birth        date,
+  place_of_birth       text,
+  -- Contact Details
   email                text        not null unique,
   phone                text,
-  company              text,
+  address              text,
+  -- System
   status               text        not null default 'lead'
                          check (status in ('lead','active','inactive')),
+  is_staff             boolean     not null default false,
   profile_picture_url  text,
+  related_contact_id   bigint      references public.contacts(id) on delete set null,
   created_at           timestamptz not null default now()
+);
+
+-- ── 2b. Staff profiles (one-to-one with contacts where is_staff = true) ──────
+create table if not exists public.staff_profiles (
+  id                      bigserial   primary key,
+  contact_id              bigint      not null unique references public.contacts(id) on delete cascade,
+  -- Employment & Identification
+  ssnit_number            text,
+  national_id_number      text,
+  national_id_photo_url   text,
+  stanbic_account_number  text,
+  certification_url       text,
+  -- Status
+  marital_status          text        check (marital_status in ('single','married','divorced','widowed')),
+  employment_status       text        check (employment_status in ('contract','permanent','ambassador')),
+  start_date              date,
+  end_date                date,
+  emergency_contact       text,
+  -- Screening
+  arrested_before         boolean,
+  dismissed_for_stealing  boolean,
+  accused_of_abuse        boolean,
+  created_at              timestamptz not null default now()
 );
 
 -- ── 3. Admin-defined extra fields for contacts ───────────────────────────────
@@ -133,19 +165,37 @@ alter table public.program_fields       enable row level security;
 alter table public.enrollments          enable row level security;
 alter table public.enrollment_values    enable row level security;
 alter table public.notes                enable row level security;
+alter table public.staff_profiles       enable row level security;
 
--- Everyone authenticated can read their own profile
+-- Helper function: breaks the recursive RLS loop by running as DB owner
+-- (security definer bypasses RLS when checking the caller's own role)
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_profiles
+    where id = auth.uid() and role = 'admin'
+  );
+$$;
+
+-- Each user can always read their own profile row
 create policy "Users read own profile"
   on public.user_profiles for select to authenticated
   using (id = auth.uid());
 
--- Admins can read all profiles (needed to manage users)
+-- Admins can read ALL profiles (needed for User Management page)
 create policy "Admins read all profiles"
   on public.user_profiles for select to authenticated
-  using (exists (
-    select 1 from public.user_profiles p
-    where p.id = auth.uid() and p.role = 'admin'
-  ));
+  using (public.is_admin());
+
+-- Admins can update any user's role
+create policy "Admins can update user profiles"
+  on public.user_profiles for update to authenticated
+  using (public.is_admin())
+  with check (true);
 
 -- All authenticated users can read/write contacts, notes, enrollments, programs
 -- (Admin-only restrictions on field builder enforced in the frontend by role check)
@@ -192,25 +242,20 @@ create policy "Authenticated users can read files"
 -- update public.user_profiles set role = 'admin' where email = 'you@example.com';
 
 
--- ── 11. Allow admins to update any user's role ────────────────────────────────
--- Run this if you did not run the full schema refresh above.
-create policy "Admins can update user profiles"
-  on public.user_profiles for update to authenticated
-  using (exists (
-    select 1 from public.user_profiles p
-    where p.id = auth.uid() and p.role = 'admin'
-  ))
-  with check (true);
+-- ── 11. Make first user an admin (run after your first sign-up) ───────────────
+-- Replace the email below with your own:
+-- update public.user_profiles set role = 'admin' where email = 'you@example.com';
 
--- ── 12. Migration: add 'editor' role (run if upgrading from earlier schema) ───
--- Drop the old check constraint and add a new one with all three roles.
--- Safe to run even if you haven't deployed yet — alter is idempotent here.
-alter table public.user_profiles
-  drop constraint if exists user_profiles_role_check;
+-- ── 12. Staff profiles RLS ────────────────────────────────────────────────────
+create policy "Authenticated full access: staff_profiles"
+  on public.staff_profiles for all to authenticated using (true) with check (true);
 
-alter table public.user_profiles
-  add constraint user_profiles_role_check
-  check (role in ('admin','editor','viewer'));
-
--- Rename any existing 'user' rows to 'viewer' (old default → new default)
-update public.user_profiles set role = 'viewer' where role = 'user';
+-- ── 13. Migration: add new contact columns if upgrading existing DB ───────────
+-- Run these if you already have the contacts table from an earlier schema version.
+alter table public.contacts add column if not exists other_names text;
+alter table public.contacts add column if not exists gender text check (gender in ('male','female','other'));
+alter table public.contacts add column if not exists date_of_birth date;
+alter table public.contacts add column if not exists place_of_birth text;
+alter table public.contacts add column if not exists address text;
+alter table public.contacts add column if not exists is_staff boolean not null default false;
+alter table public.contacts add column if not exists related_contact_id bigint references public.contacts(id) on delete set null;
