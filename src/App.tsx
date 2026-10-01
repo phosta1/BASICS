@@ -186,7 +186,7 @@ export default function App() {
             options={{
               syncWithLocation: true,
               warnWhenUnsavedChanges: true,
-              liveMode: "auto",
+              liveMode: "off",
             }}
           >
             <AppRoutes />

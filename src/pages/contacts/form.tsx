@@ -20,8 +20,29 @@ import type { Contact, ContactField, ContactFieldValue, StaffProfile } from "../
 const { Text, Title } = Typography;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared: save extra field values after contact create/update
+// Shared: save contact relations (many-to-many via contact_relations table)
 // ─────────────────────────────────────────────────────────────────────────────
+async function saveContactRelations(contactId: number, relatedIds: number[]) {
+  // Delete existing relations for this contact (both directions)
+  await supabaseClient
+    .from("contact_relations")
+    .delete()
+    .eq("contact_id", contactId);
+
+  if (relatedIds.length === 0) return;
+
+  await supabaseClient
+    .from("contact_relations")
+    .insert(relatedIds.map((rid) => ({ contact_id: contactId, related_id: rid })));
+}
+
+async function loadContactRelations(contactId: number): Promise<number[]> {
+  const { data } = await supabaseClient
+    .from("contact_relations")
+    .select("related_id")
+    .eq("contact_id", contactId);
+  return (data ?? []).map((r: any) => r.related_id);
+}
 async function saveExtraFields(
   contactId: number,
   extraFieldDefs: ContactField[],
@@ -90,7 +111,7 @@ export const ContactCreate = () => {
 
   const handleSave = async (values: Record<string, unknown>) => {
     setIsSaving(true);
-    const { extra, staff, profile_picture_url, date_of_birth, ...baseFields } = values as any;
+    const { extra, staff, profile_picture_url, date_of_birth, related_ids, ...baseFields } = values as any;
 
     const contactPayload = {
       ...baseFields,
@@ -106,6 +127,7 @@ export const ContactCreate = () => {
           const contactId = data.data.id;
           await saveExtraFields(contactId, extraFields, extra ?? {}, []);
           if (isStaff && staff) await saveStaffProfile(contactId, staff);
+          if (related_ids?.length) await saveContactRelations(contactId, related_ids);
           setIsSaving(false);
           navigate(`/contacts/show/${contactId}`);
         },
@@ -207,10 +229,14 @@ export const ContactEdit = () => {
       address: c.address,
       status: c.status,
       profile_picture_url: c.profile_picture_url,
-      related_contact_id: c.related_contact_id,
     });
 
     setIsStaff(!!c.is_staff);
+
+    // Load existing relations
+    loadContactRelations(Number(id)).then((ids) => {
+      form.setFieldValue("related_ids", ids);
+    });
   }, [contactData?.data]);
 
   // ── FIX: pre-fill extra fields only after BOTH lists are ready ───────────
@@ -244,7 +270,7 @@ export const ContactEdit = () => {
 
   const handleSave = async (values: Record<string, unknown>) => {
     setIsSaving(true);
-    const { extra, staff, profile_picture_url, date_of_birth, ...baseFields } = values as any;
+    const { extra, staff, profile_picture_url, date_of_birth, related_ids, ...baseFields } = values as any;
 
     const contactPayload = {
       ...baseFields,
@@ -259,6 +285,7 @@ export const ContactEdit = () => {
         onSuccess: async () => {
           await saveExtraFields(Number(id), extraFields, extra ?? {}, existingValues);
           if (isStaff && staff) await saveStaffProfile(Number(id), staff);
+          await saveContactRelations(Number(id), related_ids ?? []);
           setIsSaving(false);
           navigate(`/contacts/show/${id}`);
         },
@@ -271,7 +298,7 @@ export const ContactEdit = () => {
     <Card title={<Title level={4} style={{ margin: 0 }}>Edit Contact</Title>}>
       <Form form={form} layout="vertical" onFinish={handleSave}>
         <PersonalInfoSection form={form} profilePicUrl={profilePicUrl} />
-        <CrossReferenceSection />
+        <CrossReferenceSection excludeId={Number(id)} />
         <StaffToggle isStaff={isStaff} onChange={setIsStaff} />
         {isStaff && <StaffSection />}
 
@@ -409,12 +436,12 @@ const PersonalInfoSection = ({
 // ─────────────────────────────────────────────────────────────────────────────
 // Section: Cross Reference
 // ─────────────────────────────────────────────────────────────────────────────
-const CrossReferenceSection = () => {
+const CrossReferenceSection = ({ excludeId }: { excludeId?: number }) => {
   const { data } = useList<Contact>({
     resource: "contacts",
     pagination: { pageSize: 500 },
   });
-  const contacts = data?.data ?? [];
+  const contacts = (data?.data ?? []).filter((c) => c.id !== excludeId);
 
   return (
     <>
@@ -424,15 +451,16 @@ const CrossReferenceSection = () => {
       <Alert
         type="info"
         showIcon
-        message="Link to an existing contact"
-        description="If this person has a relationship to another contact in the system, select them below."
+        message="Link to existing contacts"
+        description="Select one or more contacts who have a relationship to this person."
         style={{ marginBottom: 16 }}
       />
-      <Form.Item label="Related Contact" name="related_contact_id">
+      <Form.Item label="Related Contacts" name="related_ids">
         <Select
+          mode="multiple"
           allowClear
           showSearch
-          placeholder="Search and select a related contact…"
+          placeholder="Search and select related contacts…"
           filterOption={(input, option) =>
             String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())
           }

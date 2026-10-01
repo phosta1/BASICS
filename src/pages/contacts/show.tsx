@@ -1,19 +1,20 @@
 import { Show, useTable, DeleteButton } from "@refinedev/antd";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useShow, useCreate, useList } from "@refinedev/core";
 import { useNavigate } from "react-router-dom";
 import {
   Typography, Card, Table, Form, Input, Button,
   Space, Tag, Divider, Avatar, Descriptions, Tooltip, message,
-  Alert,
+  Alert, Row, Col,
 } from "antd";
 import {
   PlusOutlined, UserOutlined, AppstoreOutlined, FileTextOutlined,
   EyeOutlined, DownloadOutlined, IdcardOutlined, SafetyOutlined,
-  CheckCircleOutlined, CloseCircleOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, TeamOutlined,
 } from "@ant-design/icons";
 import { useRole } from "../../hooks/useRole";
 import { exportContacts } from "../../utils/exportContacts";
+import { supabaseClient } from "../../supabaseClient";
 import { BASICS_COLORS } from "../../brand";
 import type { Contact, Note, Enrollment, Program, ContactField, ContactFieldValue, StaffProfile } from "../../types";
 
@@ -32,6 +33,19 @@ export const ContactShow = () => {
   const { canEdit, isAdmin } = useRole();
   const { mutate: createNote, isLoading: isCreating } = useCreate<Note>();
   const [exporting, setExporting] = useState(false);
+  const [relatedContacts, setRelatedContacts] = useState<Contact[]>([]);
+
+  // Load related contacts via junction table
+  useEffect(() => {
+    if (!contact?.id) return;
+    supabaseClient
+      .from("contact_relations")
+      .select("related_id, contacts!contact_relations_related_id_fkey(id, first_name, last_name, email, status, profile_picture_url)")
+      .eq("contact_id", contact.id)
+      .then(({ data }) => {
+        if (data) setRelatedContacts(data.map((r: any) => r.contacts).filter(Boolean));
+      });
+  }, [contact?.id]);
 
   const handleExport = async () => {
     if (!contact?.id) return;
@@ -86,17 +100,38 @@ export const ContactShow = () => {
   });
   const staffProfile = staffData?.data?.[0];
 
-  // Fetch ALL programs in one query so ProgramBadge doesn't need its own useOne per badge
-  // (avoids variable hook count when enrollment count changes)
-  const programIds = enrollments.map((e) => e.program_id);
-  const { data: programsData } = useList<Program>({
+  // Fetch ALL programs in one query
+  const { data: allProgramsData } = useList<Program>({
     resource: "programs",
     pagination: { pageSize: 200 },
-    queryOptions: { enabled: programIds.length > 0 },
   });
-  const programMap = Object.fromEntries(
-    (programsData?.data ?? []).map((p) => [p.id, p.name])
-  );
+  const allPrograms = allProgramsData?.data ?? [];
+  const programMap = Object.fromEntries(allPrograms.map((p) => [p.id, p]));
+  const enrolledProgramIds = enrollments.map((e) => e.program_id);
+
+  // Fetch ALL enrollment values for this contact's enrollments in one query
+  const enrollmentIds = enrollments.map((e) => e.id);
+  const { data: enrollmentValuesData } = useList({
+    resource: "enrollment_values",
+    filters: enrollmentIds.length > 0
+      ? [{ field: "enrollment_id", operator: "in", value: enrollmentIds }]
+      : [],
+    pagination: { pageSize: 2000 },
+    queryOptions: { enabled: enrollmentIds.length > 0 },
+  });
+  const allEnrollmentValues = (enrollmentValuesData?.data ?? []) as Array<{ enrollment_id: number; field_id: number; value: string }>;
+
+  // Fetch ALL program fields for enrolled programs in one query
+  const { data: programFieldsData } = useList({
+    resource: "program_fields",
+    filters: enrolledProgramIds.length > 0
+      ? [{ field: "program_id", operator: "in", value: enrolledProgramIds }]
+      : [],
+    pagination: { pageSize: 500 },
+    sorters: [{ field: "sort_order", order: "asc" }],
+    queryOptions: { enabled: enrolledProgramIds.length > 0 },
+  });
+  const allProgramFields = (programFieldsData?.data ?? []) as Array<{ id: number; program_id: number; label: string; field_key: string; field_type: string }>;
 
   const handleAddNote = (values: { content: string }) => {
     createNote(
@@ -160,6 +195,47 @@ export const ContactShow = () => {
           ))}
         </Descriptions>
       </Card>
+
+      {/* ── Related Contacts ── */}
+      {relatedContacts.length > 0 && (
+        <Card
+          title={<Space><TeamOutlined />Related Contacts</Space>}
+          style={{ marginBottom: 24 }}
+        >
+          <Space wrap>
+            {relatedContacts.map((rc) => (
+              <div
+                key={rc.id}
+                onClick={() => navigate(`/contacts/show/${rc.id}`)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 14px",
+                  border: `1px solid ${BASICS_COLORS.borderColor}`,
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  background: BASICS_COLORS.primaryLight,
+                  transition: "border-color 0.15s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = BASICS_COLORS.primary)}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = BASICS_COLORS.borderColor)}
+              >
+                <Avatar size={32} src={rc.profile_picture_url} icon={<UserOutlined />} />
+                <div>
+                  <Text strong style={{ display: "block", lineHeight: 1.3, fontSize: 13 }}>
+                    {rc.first_name} {rc.last_name}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>{rc.email}</Text>
+                </div>
+                <Tag color={statusColor[rc.status] ?? "default"} style={{ marginLeft: 4 }}>
+                  {rc.status?.toUpperCase()}
+                </Tag>
+              </div>
+            ))}
+          </Space>
+        </Card>
+      )}
 
       {/* ── Staff Profile ── */}
       {isStaff && (
@@ -280,7 +356,10 @@ export const ContactShow = () => {
               type="primary"
               size="small"
               icon={<PlusOutlined />}
-              onClick={() => navigate(`/enrollments/create?contact_id=${contact?.id}`)}
+              onClick={() => {
+                const exclude = enrolledProgramIds.join(",");
+                navigate(`/enrollments/create?contact_id=${contact?.id}${exclude ? `&exclude_programs=${exclude}` : ""}`);
+              }}
             >
               Enroll in Program
             </Button>
@@ -293,15 +372,70 @@ export const ContactShow = () => {
         {enrollments.length === 0 ? (
           <Text type="secondary">Not enrolled in any programs yet.</Text>
         ) : (
-          <Space wrap>
-            {enrollments.map((e) => (
-              <ProgramBadge
-                key={e.id}
-                enrollment={e}
-                programName={programMap[e.program_id] ?? "Program"}
-              />
-            ))}
-          </Space>
+          <Row gutter={[12, 12]}>
+            {enrollments.map((e) => {
+              const program = programMap[e.program_id];
+              const fields = allProgramFields.filter((f) => f.program_id === e.program_id);
+              const valuesForEnrollment = allEnrollmentValues.filter((v) => v.enrollment_id === e.id);
+              const valueMap = Object.fromEntries(valuesForEnrollment.map((v) => [v.field_id, v.value]));
+
+              return (
+                <Col key={e.id} xs={24} sm={12} lg={8}>
+                  <Card
+                    size="small"
+                    title={
+                      <Space>
+                        <AppstoreOutlined style={{ color: BASICS_COLORS.primary }} />
+                        <Text strong style={{ color: BASICS_COLORS.secondary }}>
+                          {program?.name ?? "Program"}
+                        </Text>
+                      </Space>
+                    }
+                    extra={
+                      <Tooltip title="View full enrollment">
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<EyeOutlined />}
+                          onClick={() => navigate(`/enrollments/show/${e.id}`)}
+                          style={{ padding: 0 }}
+                        />
+                      </Tooltip>
+                    }
+                    style={{
+                      borderTop: `3px solid ${BASICS_COLORS.primary}`,
+                      cursor: "default",
+                    }}
+                  >
+                    {fields.length === 0 ? (
+                      <Text type="secondary" style={{ fontSize: 12 }}>No fields for this program.</Text>
+                    ) : (
+                      <div style={{ fontSize: 12 }}>
+                        {fields.map((f) => {
+                          const val = valueMap[f.id];
+                          return (
+                            <div key={f.id} style={{ marginBottom: 6 }}>
+                              <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                                {f.label}
+                              </Text>
+                              <Text style={{ fontSize: 12 }}>
+                                {val ? val : <Text type="secondary">—</Text>}
+                              </Text>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${BASICS_COLORS.borderColor}` }}>
+                      <Text type="secondary" style={{ fontSize: 10 }}>
+                        Enrolled {new Date(e.enrolled_at).toLocaleDateString()}
+                      </Text>
+                    </div>
+                  </Card>
+                </Col>
+              );
+            })}
+          </Row>
         )}
       </Card>
 
@@ -348,21 +482,6 @@ export const ContactShow = () => {
         </Table>
       </Card>
     </Show>
-  );
-};
-
-const ProgramBadge = ({ enrollment, programName }: { enrollment: Enrollment; programName: string }) => {
-  const navigate = useNavigate();
-  return (
-    <Tooltip title="Click to view details">
-      <Tag
-        color="blue"
-        style={{ cursor: "pointer", fontSize: 13, padding: "4px 10px" }}
-        onClick={() => navigate(`/enrollments/show/${enrollment.id}`)}
-      >
-        {programName}
-      </Tag>
-    </Tooltip>
   );
 };
 

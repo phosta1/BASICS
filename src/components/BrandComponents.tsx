@@ -68,16 +68,16 @@ export const BrandLogo = ({ collapsed }: { collapsed?: boolean }) => (
 
 /** Login page branding — big logo + org name + tagline */
 export const BrandHeader = () => (
-  <div style={{ textAlign: "center", marginBottom: 28 }}>
+  <div style={{ textAlign: "center", marginBottom: 20 }}>
     <img
       src="/basics-logo.jpg"
       alt="BASICS International"
       style={{
-        width: 96,
-        height: 96,
-        borderRadius: 12,
+        width: 72,
+        height: 72,
+        borderRadius: 10,
         objectFit: "cover",
-        marginBottom: 16,
+        marginBottom: 10,
         boxShadow: "0 4px 20px rgba(26,92,42,0.25)",
       }}
     />

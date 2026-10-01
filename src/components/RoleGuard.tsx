@@ -1,5 +1,5 @@
 import React from 'react';
-import { Result } from 'antd';
+import { Result, Spin } from 'antd';
 import { useRole } from '../hooks/useRole';
 
 interface RoleGuardProps {
@@ -21,17 +21,22 @@ export const RoleGuard: React.FC<RoleGuardProps> = ({
 }) => {
   const { role, canEdit, isAdmin, isLoading } = useRole();
 
+  // Still fetching role — show a spinner rather than a blank page or false 403
   if (isLoading) {
-    return null;
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 300 }}>
+        <Spin size="large" />
+      </div>
+    );
   }
 
-  // Check permissions
+  // Role is resolved — now evaluate
   let hasPermission = false;
 
   if (requireAdmin) {
-    hasPermission = isAdmin;
+    hasPermission = !!isAdmin;
   } else if (requireEdit) {
-    hasPermission = canEdit;
+    hasPermission = !!canEdit;
   } else if (allowedRoles) {
     hasPermission = allowedRoles.includes(role as 'admin' | 'editor' | 'viewer');
   } else {

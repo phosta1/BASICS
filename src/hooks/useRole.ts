@@ -16,21 +16,25 @@ import type { UserProfile } from "../types";
 interface Identity { id: string; name: string }
 
 export const useRole = () => {
-  const { data: identity } = useGetIdentity<Identity>();
+  const { data: identity, isLoading: identityLoading } = useGetIdentity<Identity>();
 
-  const { data, isLoading } = useOne<UserProfile>({
+  const { data, isLoading: profileLoading } = useOne<UserProfile>({
     resource: "user_profiles",
     id: identity?.id ?? "",
     queryOptions: { enabled: !!identity?.id },
   });
 
+  // Still loading if: identity hasn't resolved, OR profile fetch is in flight,
+  // OR identity resolved but profile data hasn't come back yet.
+  const isLoading = identityLoading || profileLoading || (!!identity?.id && !data?.data);
+
   const role = data?.data?.role ?? "viewer";
 
   return {
     role,
-    isViewer: role === "viewer",
-    canEdit:  role === "editor" || role === "admin",
-    isAdmin:  role === "admin",
+    isViewer: isLoading ? undefined : role === "viewer",
+    canEdit:  isLoading ? undefined : (role === "editor" || role === "admin"),
+    isAdmin:  isLoading ? undefined : role === "admin",
     isLoading,
   };
 };

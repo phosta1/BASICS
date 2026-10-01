@@ -1,149 +1,318 @@
 /**
- * Dynamic Dashboard
- * - Summary stat cards (contacts, enrollments, programs, active contacts)
- * - Enrollments per program (auto-updates as programs are added)
- * - Contacts by status (donut)
- * - Dynamic breakdown charts for every select/text contact field admins create
- * - Recent contacts table
- *
- * All charts update automatically as admin adds new fields and programs.
+ * Dynamic Dashboard — admin-configurable, program-field-aware
  */
+import { useState, useEffect } from "react";
 import { useList } from "@refinedev/core";
+import { useNavigate } from "react-router-dom";
 import {
   Card, Col, Row, Statistic, Table, Tag, Typography,
-  Space, Avatar, Spin, Tabs, Empty,
+  Space, Avatar, Spin, Empty, DatePicker, Button,
 } from "antd";
+import dayjs, { type Dayjs } from "dayjs";
 import {
   TeamOutlined, AppstoreOutlined, CheckCircleOutlined,
-  RiseOutlined, UserOutlined, BarChartOutlined,
+  RiseOutlined, UserOutlined, IdcardOutlined, FilterOutlined, CloseCircleOutlined,
 } from "@ant-design/icons";
-import type { Contact, Program, Enrollment, ContactField, ContactFieldValue } from "../../types";
+import type { Contact, Program, Enrollment, ContactField, ContactFieldValue, ProgramField } from "../../types";
 import { PageHeader } from "../../components/BrandComponents";
 import { BASICS_COLORS } from "../../brand";
+import { useRole } from "../../hooks/useRole";
+import {
+  DashboardBuilderDrawer,
+  loadDashboardConfig,
+  buildDefaultWidgets,
+  type DashboardWidget,
+} from "./DashboardBuilder";
 
 const { Text } = Typography;
+const { RangePicker } = DatePicker;
 
 const COLORS = [
-  BASICS_COLORS.primary,    // lime green
-  BASICS_COLORS.secondary,     // dark forest green
-  BASICS_COLORS.gold,       // amber gold
-  "#4CAF50",                // medium green
-  "#81C784",                // light green
-  "#A5D6A7",                // pale green
-  "#2E7D32",                // deep green
-  "#F9A825",                // deep gold
+  BASICS_COLORS.primary, BASICS_COLORS.secondary, BASICS_COLORS.gold,
+  "#4CAF50", "#81C784", "#A5D6A7", "#2E7D32", "#F9A825",
 ];
 
 const statusColor: Record<string, string> = {
-  lead:     BASICS_COLORS.gold,
-  active:   BASICS_COLORS.primary,
-  inactive: "#9E9E9E",
+  lead: BASICS_COLORS.gold, active: BASICS_COLORS.primary, inactive: "#9E9E9E",
 };
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 export const Dashboard = () => {
-  // ── Core data ──────────────────────────────────────────────────────────────
-  const { data: contactsData, isLoading: loadingContacts } = useList<Contact>({
-    resource: "contacts",
-    pagination: { pageSize: 2000 },
-    sorters: [{ field: "created_at", order: "desc" }],
-  });
+  const navigate = useNavigate();
+  const { isAdmin } = useRole();
 
-  const { data: programsData, isLoading: loadingPrograms } = useList<Program>({
-    resource: "programs",
-    pagination: { pageSize: 200 },
-  });
+  // ── Data fetches ───────────────────────────────────────────────────────────
+  const { data: contactsData,    isLoading: loadingContacts    } = useList<Contact>({ resource: "contacts",   pagination: { pageSize: 5000  }, sorters: [{ field: "created_at", order: "desc" }] });
+  const { data: programsData,    isLoading: loadingPrograms    } = useList<Program>({ resource: "programs",   pagination: { pageSize: 200   } });
+  const { data: enrollmentsData, isLoading: loadingEnrollments } = useList<Enrollment>({ resource: "enrollments", pagination: { pageSize: 20000 } });
+  const { data: contactFieldsData, isLoading: loadingFields }    = useList<ContactField>({ resource: "contact_fields", sorters: [{ field: "sort_order", order: "asc" }], pagination: { pageSize: 200 } });
+  const { data: fieldValuesData }   = useList<ContactFieldValue>({ resource: "contact_field_values", pagination: { pageSize: 50000 } });
+  const { data: programFieldsData } = useList<ProgramField>({ resource: "program_fields", sorters: [{ field: "sort_order", order: "asc" }], pagination: { pageSize: 1000 } });
+  const { data: enrollmentValuesData } = useList({ resource: "enrollment_values", pagination: { pageSize: 100000 } });
 
-  const { data: enrollmentsData, isLoading: loadingEnrollments } = useList<Enrollment>({
-    resource: "enrollments",
-    pagination: { pageSize: 10000 },
-  });
+  const contacts         = contactsData?.data      ?? [];
+  const programs         = programsData?.data      ?? [];
+  const allEnrollments   = enrollmentsData?.data   ?? [];
+  const contactFields    = contactFieldsData?.data ?? [];
+  const fieldValues      = fieldValuesData?.data   ?? [];
+  const programFields    = (programFieldsData?.data ?? []) as ProgramField[];
+  const enrollmentValues = (enrollmentValuesData?.data ?? []) as Array<{ enrollment_id: number; field_id: number; value: string }>;
 
-  // ── Dynamic contact fields ─────────────────────────────────────────────────
-  const { data: contactFieldsData } = useList<ContactField>({
-    resource: "contact_fields",
-    sorters: [{ field: "sort_order", order: "asc" }],
-    pagination: { pageSize: 200 },
-  });
+  const isLoading        = loadingContacts || loadingPrograms || loadingEnrollments;
+  const contactFieldsLoaded = !loadingFields;
 
-  const { data: fieldValuesData } = useList<ContactFieldValue>({
-    resource: "contact_field_values",
-    pagination: { pageSize: 20000 },
-  });
+  // ── Date range filter ──────────────────────────────────────────────────────
+  const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
 
-  const contacts = contactsData?.data ?? [];
-  const programs = programsData?.data ?? [];
-  const enrollments = enrollmentsData?.data ?? [];
-  const contactFields = contactFieldsData?.data ?? [];
-  const fieldValues = fieldValuesData?.data ?? [];
+  const QUICK_RANGES: { label: string; range: [Dayjs, Dayjs] | null }[] = [
+    { label: "All time",    range: null },
+    { label: "This year",   range: [dayjs().startOf("year"), dayjs()] },
+    { label: "Last year",   range: [dayjs().subtract(1,"year").startOf("year"), dayjs().subtract(1,"year").endOf("year")] },
+    { label: "Last 2 years",range: [dayjs().subtract(2,"year").startOf("year"), dayjs()] },
+    { label: "Last 5 years",range: [dayjs().subtract(5,"year").startOf("year"), dayjs()] },
+  ];
 
-  const isLoading = loadingContacts || loadingPrograms || loadingEnrollments;
+  // Filter enrollments by date range (on enrolled_at)
+  const enrollments = dateRange
+    ? allEnrollments.filter((e) => {
+        const d = dayjs(e.enrolled_at);
+        return d.isAfter(dateRange[0].subtract(1,"day")) && d.isBefore(dateRange[1].add(1,"day"));
+      })
+    : allEnrollments;
+
+  // ── Widget config ──────────────────────────────────────────────────────────
+  const [widgets, setWidgets]             = useState<DashboardWidget[]>([]);
+  const [configLoading, setConfigLoading] = useState(true);
+
+  useEffect(() => {
+    loadDashboardConfig()
+      .then((saved) => setWidgets(saved ?? buildDefaultWidgets(contactFields)))
+      .catch(() => setWidgets(buildDefaultWidgets(contactFields)))
+      .finally(() => setConfigLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (contactFieldsLoaded && widgets.length > 0) {
+      loadDashboardConfig().then((saved) => {
+        if (!saved) setWidgets(buildDefaultWidgets(contactFields));
+      }).catch(() => {});
+    }
+  }, [contactFieldsLoaded, contactFields.length]);
 
   // ── Derived stats ──────────────────────────────────────────────────────────
-  const totalContacts = contacts.length;
+  const totalContacts    = contacts.length;
+  const activeContacts   = contacts.filter((c) => c.status === "active").length;
   const totalEnrollments = enrollments.length;
-  const totalPrograms = programs.length;
-  const activeContacts = contacts.filter((c) => c.status === "active").length;
+  const totalPrograms    = programs.length;
+  const totalStaff       = contacts.filter((c) => (c as any).is_staff).length;
 
-  // Enrollments per program
-  const programStats = programs
-    .map((p, i) => ({
-      id: p.id,
-      name: p.name,
-      count: enrollments.filter((e) => e.program_id === p.id).length,
-      color: COLORS[i % COLORS.length],
-    }))
-    .sort((a, b) => b.count - a.count);
+  const programStats = programs.map((p, i) => ({
+    id: p.id, name: p.name,
+    count: enrollments.filter((e) => e.program_id === p.id).length,
+    color: COLORS[i % COLORS.length],
+  })).sort((a, b) => b.count - a.count);
 
-  // Contacts by status
-  const statusGroups = ["lead", "active", "inactive"].map((s) => ({
-    status: s,
-    count: contacts.filter((c) => c.status === s).length,
+  const statusGroups = ["lead","active","inactive"].map((s) => ({
+    status: s, count: contacts.filter((c) => c.status === s).length,
   }));
 
-  // ── Dynamic field breakdowns ───────────────────────────────────────────────
-  // Only select/text fields make sense as chart categories.
-  // For 'select' fields: group by value.
-  // For 'text' fields: count filled vs empty.
-  const dynamicCharts = contactFields
-    .filter((f) => f.field_type === "select" || f.field_type === "text")
-    .map((field, fi) => {
-      const valuesForField = fieldValues.filter((v) => v.field_id === field.id);
-      const valueMap = Object.fromEntries(valuesForField.map((v) => [v.contact_id, v.value]));
+  const recentContacts = contacts.slice(0, 8);
 
-      if (field.field_type === "select" && Array.isArray(field.options) && field.options.length > 0) {
-        // Group contacts by their selected option
-        const groups = (field.options as string[]).map((opt, oi) => ({
-          label: opt,
-          count: contacts.filter((c) => valueMap[c.id] === opt).length,
-          color: COLORS[(fi * 3 + oi) % COLORS.length],
-        }));
-        const filled = groups.reduce((sum, g) => sum + g.count, 0);
-        const empty = totalContacts - filled;
-        if (empty > 0) {
-          groups.push({ label: "Not set", count: empty, color: "#d9d9d9" });
-        }
-        return { field, type: "breakdown" as const, groups };
+  // ── Widget renderer ────────────────────────────────────────────────────────
+  const renderWidget = (w: DashboardWidget) => {
+    if (!w.visible) return null;
+
+    switch (w.type) {
+      // ── Stat cards ──
+      case "stat_total_contacts":
+        return <Card style={{ borderTop: `3px solid ${BASICS_COLORS.secondary}` }}><Statistic title={w.label} value={totalContacts} prefix={<TeamOutlined style={{ color: BASICS_COLORS.secondary }} />} valueStyle={{ color: BASICS_COLORS.secondary }} /></Card>;
+      case "stat_active_contacts":
+        return <Card style={{ borderTop: `3px solid ${BASICS_COLORS.primary}` }}><Statistic title={w.label} value={activeContacts} prefix={<CheckCircleOutlined style={{ color: BASICS_COLORS.primary }} />} valueStyle={{ color: BASICS_COLORS.primary }} /></Card>;
+      case "stat_total_enrollments":
+        return (
+          <Card style={{ borderTop: `3px solid ${BASICS_COLORS.gold}` }}>
+            <Statistic title={w.label} value={totalEnrollments} prefix={<RiseOutlined style={{ color: BASICS_COLORS.gold }} />} valueStyle={{ color: BASICS_COLORS.gold }} />
+            {dateRange && <Text type="secondary" style={{ fontSize: 10 }}>{dateRange[0].format("MMM YYYY")} – {dateRange[1].format("MMM YYYY")}</Text>}
+          </Card>
+        );
+      case "stat_total_programs":
+        return <Card style={{ borderTop: `3px solid ${BASICS_COLORS.secondary}` }}><Statistic title={w.label} value={totalPrograms} prefix={<AppstoreOutlined style={{ color: BASICS_COLORS.secondary }} />} valueStyle={{ color: BASICS_COLORS.secondary }} /></Card>;
+      case "stat_total_staff":
+        return <Card style={{ borderTop: `3px solid ${BASICS_COLORS.primary}` }}><Statistic title={w.label} value={totalStaff} prefix={<IdcardOutlined style={{ color: BASICS_COLORS.primary }} />} valueStyle={{ color: BASICS_COLORS.primary }} /></Card>;
+
+      case "stat_program_count": {
+        const prog = programs.find((p) => p.id === w.program_id);
+        const count = enrollments.filter((e) => e.program_id === w.program_id).length;
+        const color = COLORS[programs.indexOf(prog!) % COLORS.length] ?? BASICS_COLORS.primary;
+        return (
+          <Card style={{ borderTop: `3px solid ${color}` }}>
+            <Statistic title={w.label} value={count}
+              prefix={<AppstoreOutlined style={{ color }} />} valueStyle={{ color }} />
+            {dateRange && <Text type="secondary" style={{ fontSize: 10 }}>{dateRange[0].format("MMM YYYY")} – {dateRange[1].format("MMM YYYY")}</Text>}
+          </Card>
+        );
       }
 
-      // For text/other fields: filled vs not filled
-      const filled = contacts.filter((c) => {
-        const val = valueMap[c.id];
-        return val && val.trim().length > 0;
-      }).length;
+      // ── Contact charts ──
+      case "chart_program_bars":
+        return (
+          <Card title={w.label} style={{ height: "100%" }}>
+            {programStats.length === 0
+              ? <Empty description="No programs yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              : programStats.map((p) => <ProgramBar key={p.id} name={p.name} count={p.count} total={totalEnrollments || 1} color={p.color} />)}
+          </Card>
+        );
 
-      return {
-        field,
-        type: "fillrate" as const,
-        groups: [
-          { label: "Filled", count: filled, color: "#52c41a" },
-          { label: "Empty", count: totalContacts - filled, color: "#f0f0f0" },
-        ],
-      };
-    });
+      case "chart_status_donut":
+        return <Card title={w.label} style={{ height: "100%" }}><StatusDonut groups={statusGroups} total={totalContacts} /></Card>;
 
-  const recentContacts = contacts.slice(0, 5);
+      case "chart_field_breakdown":
+      case "chart_field_fillrate": {
+        const field = contactFields.find((f) => f.id === w.field_id);
+        if (!field) return null;
+        const valMap = Object.fromEntries(fieldValues.filter((v) => v.field_id === field.id).map((v) => [v.contact_id, v.value]));
+        let groups: { label: string; count: number; color: string }[];
+        if (w.type === "chart_field_breakdown" && Array.isArray(field.options)) {
+          groups = (field.options as string[]).map((opt, oi) => ({ label: opt, count: contacts.filter((c) => valMap[c.id] === opt).length, color: COLORS[oi % COLORS.length] }));
+          const filled = groups.reduce((s, g) => s + g.count, 0);
+          if (totalContacts - filled > 0) groups.push({ label: "Not set", count: totalContacts - filled, color: "#d9d9d9" });
+        } else {
+          const filled = contacts.filter((c) => valMap[c.id]?.trim()).length;
+          groups = [{ label: "Filled", count: filled, color: BASICS_COLORS.primary }, { label: "Empty", count: totalContacts - filled, color: "#f0f0f0" }];
+        }
+        return (
+          <Card title={w.label}>
+            <Row gutter={[16, 0]}>
+              <Col xs={24} md={14}>{groups.map((g) => <ProgramBar key={g.label} name={g.label} count={g.count} total={totalContacts || 1} color={g.color} />)}</Col>
+              <Col xs={24} md={10}><StatusDonut groups={groups.map((g) => ({ status: g.label, count: g.count }))} total={totalContacts} colors={Object.fromEntries(groups.map((g) => [g.label, g.color]))} /></Col>
+            </Row>
+          </Card>
+        );
+      }
 
-  if (isLoading) {
+      // ── Program field charts ──
+      case "chart_program_field_breakdown":
+      case "chart_program_field_fillrate": {
+        const progEnrollments = enrollments.filter((e) => e.program_id === w.program_id);
+        const enrollIds = progEnrollments.map((e) => e.id);
+        const fieldVals = enrollmentValues.filter((v) => v.field_id === w.program_field_id && enrollIds.includes(v.enrollment_id));
+        const valMap = Object.fromEntries(fieldVals.map((v) => [v.enrollment_id, v.value]));
+        const field = programFields.find((f) => f.id === w.program_field_id);
+        const total = progEnrollments.length;
+
+        let groups: { label: string; count: number; color: string }[];
+        if (w.type === "chart_program_field_breakdown" && Array.isArray(field?.options)) {
+          groups = (field!.options as string[]).map((opt, oi) => ({
+            label: opt,
+            count: progEnrollments.filter((e) => valMap[e.id] === opt).length,
+            color: COLORS[oi % COLORS.length],
+          }));
+          const filled = groups.reduce((s, g) => s + g.count, 0);
+          if (total - filled > 0) groups.push({ label: "Not set", count: total - filled, color: "#d9d9d9" });
+        } else {
+          const filled = progEnrollments.filter((e) => valMap[e.id]?.trim()).length;
+          groups = [
+            { label: "Filled", count: filled, color: BASICS_COLORS.primary },
+            { label: "Empty",  count: total - filled, color: "#f0f0f0" },
+          ];
+        }
+
+        return (
+          <Card title={<Space><AppstoreOutlined style={{ color: BASICS_COLORS.primary }} />{w.label}</Space>}
+            extra={<Tag color="blue">{w.program_name}</Tag>}
+          >
+            {total === 0
+              ? <Empty description={dateRange ? "No enrollments in this date range" : "No enrollments yet"} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              : (
+                <Row gutter={[16, 0]}>
+                  <Col xs={24} md={14}>
+                    {groups.map((g) => <ProgramBar key={g.label} name={g.label} count={g.count} total={total || 1} color={g.color} />)}
+                    <Text type="secondary" style={{ fontSize: 11 }}>Based on {total} enrollment{total !== 1 ? "s" : ""}</Text>
+                  </Col>
+                  <Col xs={24} md={10}>
+                    <StatusDonut groups={groups.map((g) => ({ status: g.label, count: g.count }))} total={total} colors={Object.fromEntries(groups.map((g) => [g.label, g.color]))} />
+                  </Col>
+                </Row>
+              )}
+          </Card>
+        );
+      }
+
+      // ── Enrollment trend over time ──
+      case "chart_program_enrollments_over_time": {
+        const progEnrollments = enrollments.filter((e) => e.program_id === w.program_id);
+        // Group by month
+        const monthCounts: Record<string, number> = {};
+        progEnrollments.forEach((e) => {
+          const month = dayjs(e.enrolled_at).format("MMM YYYY");
+          monthCounts[month] = (monthCounts[month] ?? 0) + 1;
+        });
+        const sorted = Object.entries(monthCounts).sort(([a], [b]) => dayjs(a, "MMM YYYY").valueOf() - dayjs(b, "MMM YYYY").valueOf());
+        const maxCount = Math.max(...sorted.map(([,c]) => c), 1);
+
+        return (
+          <Card title={<Space><AppstoreOutlined style={{ color: BASICS_COLORS.primary }} />{w.label}</Space>}
+            extra={<Tag color="blue">{w.program_name}</Tag>}
+          >
+            {sorted.length === 0
+              ? <Empty description={dateRange ? "No enrollments in this date range" : "No enrollments yet"} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              : (
+                <>
+                  <Text type="secondary" style={{ fontSize: 11, marginBottom: 12, display: "block" }}>
+                    {progEnrollments.length} total enrollment{progEnrollments.length !== 1 ? "s" : ""} across {sorted.length} month{sorted.length !== 1 ? "s" : ""}
+                  </Text>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+                    {sorted.map(([month, count]) => (
+                      <div key={month} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 44 }}>
+                        <Text style={{ fontSize: 11, fontWeight: 600, color: BASICS_COLORS.secondary }}>{count}</Text>
+                        <div style={{
+                          width: 36, borderRadius: "4px 4px 0 0",
+                          height: `${Math.max((count / maxCount) * 120, 4)}px`,
+                          background: BASICS_COLORS.primary,
+                          transition: "height 0.4s ease",
+                        }} />
+                        <Text style={{ fontSize: 9, color: "#888", marginTop: 4, textAlign: "center", lineHeight: 1.2 }}>
+                          {month.replace(" ", "\n")}
+                        </Text>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+          </Card>
+        );
+      }
+
+      // ── Recent contacts table ──
+      case "table_recent_contacts":
+        return (
+          <Card title={w.label}>
+            {recentContacts.length === 0
+              ? <Empty description="No contacts yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              : (
+                <Table dataSource={recentContacts} rowKey="id" size="small" pagination={false}
+                  onRow={(c) => ({ onClick: () => navigate(`/contacts/show/${c.id}`), style: { cursor: "pointer" } })}
+                >
+                  <Table.Column title="Name" render={(_: unknown, c: Contact) => (
+                    <Space><Avatar size="small" src={c.profile_picture_url} icon={<UserOutlined />} />{c.first_name} {c.last_name}</Space>
+                  )} />
+                  <Table.Column dataIndex="email" title="Email" />
+                  <Table.Column dataIndex="phone" title="Phone" />
+                  <Table.Column dataIndex="status" title="Status"
+                    render={(v: string) => <Tag color={statusColor[v] ?? "default"}>{v?.toUpperCase()}</Tag>} />
+                  <Table.Column dataIndex="created_at" title="Added"
+                    render={(v: string) => new Date(v).toLocaleDateString()} />
+                </Table>
+              )}
+          </Card>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  if (isLoading || configLoading) {
     return (
       <div style={{ textAlign: "center", padding: 80 }}>
         <Spin size="large" />
@@ -158,303 +327,104 @@ export const Dashboard = () => {
       <PageHeader
         title="Dashboard"
         subtitle="BASICS International · Community Management System"
+        extra={
+          isAdmin
+            ? <DashboardBuilderDrawer widgets={widgets} contactFields={contactFields} programs={programs} programFields={programFields} onChange={setWidgets} />
+            : undefined
+        }
       />
 
-      {/* ── Summary cards ── */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={12} md={6}>
-          <Card style={{ borderTop: `3px solid ${BASICS_COLORS.secondary}` }}>
-            <Statistic
-              title="Total Contacts"
-              value={totalContacts}
-              prefix={<TeamOutlined style={{ color: BASICS_COLORS.secondary }} />}
-              valueStyle={{ color: BASICS_COLORS.secondary }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={12} md={6}>
-          <Card style={{ borderTop: `3px solid ${BASICS_COLORS.primary}` }}>
-            <Statistic
-              title="Active Contacts"
-              value={activeContacts}
-              prefix={<CheckCircleOutlined style={{ color: BASICS_COLORS.primary }} />}
-              valueStyle={{ color: BASICS_COLORS.primary }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={12} md={6}>
-          <Card style={{ borderTop: `3px solid ${BASICS_COLORS.gold}` }}>
-            <Statistic
-              title="Total Enrollments"
-              value={totalEnrollments}
-              prefix={<RiseOutlined style={{ color: BASICS_COLORS.gold }} />}
-              valueStyle={{ color: BASICS_COLORS.gold }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={12} md={6}>
-          <Card style={{ borderTop: `3px solid ${BASICS_COLORS.primaryDark}` }}>
-            <Statistic
-              title="Programs"
-              value={totalPrograms}
-              prefix={<AppstoreOutlined style={{ color: BASICS_COLORS.primaryDark }} />}
-              valueStyle={{ color: BASICS_COLORS.primaryDark }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* ── Program enrollments + Status donut ── */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} lg={14}>
-          <Card title="Enrollments per Program" style={{ height: "100%" }}>
-            {programStats.length === 0 ? (
-              <Empty description="No programs created yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              programStats.map((p) => (
-                <ProgramBar
-                  key={p.id}
-                  name={p.name}
-                  count={p.count}
-                  total={totalEnrollments || 1}
-                  color={p.color}
-                />
-              ))
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={10}>
-          <Card title="Contacts by Status" style={{ height: "100%" }}>
-            <StatusDonut groups={statusGroups} total={totalContacts} />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* ── Dynamic field charts ── */}
-      {dynamicCharts.length > 0 && (
-        <Card
-          title={
+      {/* ── Date range filter bar ── */}
+      <Card size="small" style={{ marginBottom: 16, borderLeft: `3px solid ${BASICS_COLORS.gold}` }}>
+        <Row align="middle" gutter={[12, 8]}>
+          <Col flex="none">
             <Space>
-              <BarChartOutlined />
-              Contact Field Breakdown
+              <FilterOutlined style={{ color: BASICS_COLORS.secondary }} />
+              <Text strong style={{ color: BASICS_COLORS.secondary, fontSize: 13 }}>Filter by enrollment date:</Text>
             </Space>
-          }
-          style={{ marginBottom: 24 }}
-          extra={
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              Auto-generated from your contact fields · {dynamicCharts.length} field{dynamicCharts.length !== 1 ? "s" : ""}
-            </Text>
-          }
-        >
-          <Tabs
-            items={dynamicCharts.map((chart) => ({
-              key: chart.field.id.toString(),
-              label: chart.field.label,
-              children: (
-                <div>
-                  {chart.type === "breakdown" ? (
-                    <Row gutter={[16, 0]}>
-                      <Col xs={24} md={14}>
-                        {chart.groups.map((g) => (
-                          <ProgramBar
-                            key={g.label}
-                            name={g.label}
-                            count={g.count}
-                            total={totalContacts || 1}
-                            color={g.color}
-                          />
-                        ))}
-                      </Col>
-                      <Col xs={24} md={10}>
-                        <StatusDonut
-                          groups={chart.groups.map((g) => ({ status: g.label, count: g.count }))}
-                          total={totalContacts}
-                          colors={Object.fromEntries(chart.groups.map((g) => [g.label, g.color]))}
-                        />
-                      </Col>
-                    </Row>
-                  ) : (
-                    // Fill rate for text fields
-                    <Row gutter={[16, 0]}>
-                      <Col xs={24} md={10}>
-                        <StatusDonut
-                          groups={chart.groups.map((g) => ({ status: g.label, count: g.count }))}
-                          total={totalContacts}
-                          colors={Object.fromEntries(chart.groups.map((g) => [g.label, g.color]))}
-                        />
-                      </Col>
-                      <Col xs={24} md={14}>
-                        <div style={{ paddingTop: 8 }}>
-                          {chart.groups.map((g) => (
-                            <div key={g.label} style={{ marginBottom: 12 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                                <Text>{g.label}</Text>
-                                <Text type="secondary">
-                                  {g.count} contact{g.count !== 1 ? "s" : ""} (
-                                  {totalContacts > 0 ? Math.round((g.count / totalContacts) * 100) : 0}%)
-                                </Text>
-                              </div>
-                              <div style={{ height: 8, borderRadius: 4, background: "#f0f0f0", overflow: "hidden" }}>
-                                <div
-                                  style={{
-                                    height: "100%",
-                                    width: `${totalContacts > 0 ? (g.count / totalContacts) * 100 : 0}%`,
-                                    background: g.color,
-                                    borderRadius: 4,
-                                    transition: "width 0.6s ease",
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </Col>
-                    </Row>
-                  )}
-                </div>
-              ),
-            }))}
-          />
-        </Card>
-      )}
-
-      {/* ── Per-program enrollment counts (detailed) ── */}
-      {programs.length > 0 && (
-        <Card
-          title={<Space><AppstoreOutlined />Enrollment Summary by Program</Space>}
-          style={{ marginBottom: 24 }}
-        >
-          <Row gutter={[16, 16]}>
-            {programStats.map((p) => (
-              <Col key={p.id} xs={12} sm={8} md={6}>
-                <Card
+          </Col>
+          <Col flex="none">
+            <Space wrap>
+              {QUICK_RANGES.map((q) => (
+                <Button
+                  key={q.label}
                   size="small"
-                  style={{ borderTop: `3px solid ${p.color}`, textAlign: "center" }}
+                  type={JSON.stringify(dateRange) === JSON.stringify(q.range) || (!dateRange && !q.range) ? "primary" : "default"}
+                  onClick={() => setDateRange(q.range)}
+                  style={
+                    JSON.stringify(dateRange) === JSON.stringify(q.range) || (!dateRange && !q.range)
+                      ? { background: BASICS_COLORS.secondary, borderColor: BASICS_COLORS.secondary }
+                      : {}
+                  }
                 >
-                  <Statistic
-                    title={<Text ellipsis style={{ fontSize: 12 }}>{p.name}</Text>}
-                    value={p.count}
-                    valueStyle={{ color: p.color, fontSize: 28 }}
-                  />
-                  <Text type="secondary" style={{ fontSize: 11 }}>enrolled</Text>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-        </Card>
-      )}
-
-      {/* ── Recent contacts ── */}
-      <Card title="Recently Added Contacts">
-        {recentContacts.length === 0 ? (
-          <Empty description="No contacts yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        ) : (
-          <Table dataSource={recentContacts} rowKey="id" size="small" pagination={false}>
-            <Table.Column
-              title="Name"
-              render={(_: unknown, c: Contact) => (
-                <Space>
-                  <Avatar size="small" src={c.profile_picture_url} icon={<UserOutlined />} />
-                  {c.first_name} {c.last_name}
-                </Space>
-              )}
+                  {q.label}
+                </Button>
+              ))}
+            </Space>
+          </Col>
+          <Col flex="none">
+            <RangePicker
+              size="small"
+              value={dateRange}
+              onChange={(v) => setDateRange(v as [Dayjs, Dayjs] | null)}
+              format="DD/MM/YYYY"
+              placeholder={["From date", "To date"]}
             />
-            <Table.Column dataIndex="email" title="Email" />
-            <Table.Column dataIndex="company" title="Company" />
-            <Table.Column
-              dataIndex="status"
-              title="Status"
-              render={(v: string) => (
-                <Tag color={statusColor[v] ?? "default"}>{v?.toUpperCase()}</Tag>
-              )}
-            />
-            <Table.Column
-              dataIndex="created_at"
-              title="Added"
-              render={(v: string) => new Date(v).toLocaleDateString()}
-            />
-          </Table>
-        )}
+          </Col>
+          {dateRange && (
+            <Col flex="none">
+              <Button size="small" icon={<CloseCircleOutlined />} onClick={() => setDateRange(null)}>
+                Clear
+              </Button>
+            </Col>
+          )}
+        </Row>
       </Card>
+
+      {/* ── Widget grid ── */}
+      <Row gutter={[16, 16]}>
+        {widgets.filter((w) => w.visible).map((w) => {
+          const content = renderWidget(w);
+          if (!content) return null;
+          return (
+            <Col key={w.id} xs={24} sm={w.col_span <= 8 ? 12 : 24} md={w.col_span as any}>
+              {content}
+            </Col>
+          );
+        })}
+      </Row>
     </div>
   );
 };
 
-// ── Program bar ───────────────────────────────────────────────────────────────
-const ProgramBar = ({
-  name, count, total, color,
-}: { name: string; count: number; total: number; color: string }) => {
-  const pct = Math.round((count / total) * 100);
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <Text style={{ fontWeight: 500 }}>{name}</Text>
-        <Text type="secondary">{count} ({pct}%)</Text>
-      </div>
-      <div style={{ height: 10, borderRadius: 5, background: "#f0f0f0", overflow: "hidden" }}>
-        <div
-          style={{
-            height: "100%",
-            width: `${Math.max(pct, count > 0 ? 2 : 0)}%`,
-            background: color,
-            borderRadius: 5,
-            transition: "width 0.6s ease",
-          }}
-        />
-      </div>
+// ── ProgramBar ────────────────────────────────────────────────────────────────
+const ProgramBar = ({ name, count, total, color }: { name: string; count: number; total: number; color: string }) => (
+  <div style={{ marginBottom: 14 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+      <Text style={{ fontWeight: 500 }}>{name}</Text>
+      <Text type="secondary">{count} ({Math.round((count / total) * 100)}%)</Text>
     </div>
-  );
-};
+    <div style={{ height: 10, borderRadius: 5, background: "#f0f0f0", overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${Math.max(Math.round((count / total) * 100), count > 0 ? 2 : 0)}%`, background: color, borderRadius: 5, transition: "width 0.6s ease" }} />
+    </div>
+  </div>
+);
 
-// ── Status donut ──────────────────────────────────────────────────────────────
-const StatusDonut = ({
-  groups,
-  total,
-  colors: colorOverrides,
-}: {
-  groups: { status: string; count: number }[];
-  total: number;
-  colors?: Record<string, string>;
-}) => {
-  const defaultColors: Record<string, string> = {
-    lead:     BASICS_COLORS.gold,
-    active:   BASICS_COLORS.primary,
-    inactive: "#d9d9d9",
-  };
-  const colors = colorOverrides ?? defaultColors;
-
+// ── StatusDonut ───────────────────────────────────────────────────────────────
+const StatusDonut = ({ groups, total, colors: colorOverrides }: { groups: { status: string; count: number }[]; total: number; colors?: Record<string, string> }) => {
+  const colors = colorOverrides ?? { lead: BASICS_COLORS.gold, active: BASICS_COLORS.primary, inactive: "#d9d9d9" };
   let offset = 0;
-  const segments = groups
-    .filter((g) => g.count > 0)
-    .map((g) => {
-      const pct = (g.count / (total || 1)) * 100;
-      const seg = `${colors[g.status] ?? "#aaa"} ${offset}% ${offset + pct}%`;
-      offset += pct;
-      return seg;
-    });
-
-  const gradient =
-    segments.length > 0
-      ? `conic-gradient(${segments.join(", ")})`
-      : "conic-gradient(#f0f0f0 0% 100%)";
-
+  const segments = groups.filter((g) => g.count > 0).map((g) => {
+    const pct = (g.count / (total || 1)) * 100;
+    const seg = `${colors[g.status] ?? "#aaa"} ${offset}% ${offset + pct}%`;
+    offset += pct;
+    return seg;
+  });
+  const gradient = segments.length > 0 ? `conic-gradient(${segments.join(", ")})` : "conic-gradient(#f0f0f0 0% 100%)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-      <div
-        style={{
-          width: 120, height: 120, borderRadius: "50%",
-          background: gradient, flexShrink: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 72, height: 72, borderRadius: "50%",
-            background: "var(--ant-color-bg-container, #fff)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexDirection: "column",
-          }}
-        >
+      <div style={{ width: 120, height: 120, borderRadius: "50%", background: gradient, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--ant-color-bg-container, #fff)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
           <Text style={{ fontSize: 18, fontWeight: 700, lineHeight: 1 }}>{total}</Text>
           <Text type="secondary" style={{ fontSize: 10 }}>total</Text>
         </div>
@@ -462,10 +432,7 @@ const StatusDonut = ({
       <div>
         {groups.map((g) => (
           <div key={g.status} style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{
-              width: 12, height: 12, borderRadius: "50%",
-              background: colors[g.status] ?? "#aaa", flexShrink: 0,
-            }} />
+            <div style={{ width: 12, height: 12, borderRadius: "50%", background: colors[g.status] ?? "#aaa", flexShrink: 0 }} />
             <Text style={{ textTransform: "capitalize" }}>{g.status}</Text>
             <Text type="secondary">({g.count})</Text>
           </div>

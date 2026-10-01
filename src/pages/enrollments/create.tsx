@@ -19,13 +19,17 @@ export const EnrollmentCreate = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
 
-  // Pre-fill from query string e.g. /enrollments/create?contact_id=5&program_id=2
+  // Pre-fill from query string e.g. /enrollments/create?contact_id=5&exclude_programs=1,2,3
   const preContact = searchParams.get("contact_id")
     ? Number(searchParams.get("contact_id"))
     : undefined;
   const preProgram = searchParams.get("program_id")
     ? Number(searchParams.get("program_id"))
     : undefined;
+  const excludeProgramIds = (searchParams.get("exclude_programs") ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map(Number);
 
   const [selectedProgramId, setSelectedProgramId] = useState<number | undefined>(preProgram);
   const [isSaving, setIsSaving] = useState(false);
@@ -122,6 +126,14 @@ export const EnrollmentCreate = () => {
             {...programSelectProps}
             placeholder="Select a program"
             disabled={!!preProgram}
+            options={programSelectProps.options?.filter(
+              (o: any) => !excludeProgramIds.includes(Number(o.value))
+            )}
+            notFoundContent={
+              excludeProgramIds.length > 0
+                ? "This contact is already enrolled in all available programs"
+                : "No programs found"
+            }
             onChange={(v) => {
               setSelectedProgramId(v as unknown as number);
               form.setFieldValue("fields", {});
