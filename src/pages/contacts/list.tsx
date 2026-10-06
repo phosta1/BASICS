@@ -19,13 +19,17 @@ import type { Contact, Program } from "../../types";
 const { Text } = Typography;
 
 const statusColor: Record<Contact["status"], string> = {
-  lead: "blue", active: "green", inactive: "default",
+  active: "green",
+  "dropped off": "red",
+  completed: "blue",
+  "not lead": "default",
 };
 
 export const ContactList = () => {
   const navigate = useNavigate();
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [programFilter, setProgramFilter] = useState<string | undefined>();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [exporting, setExporting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,7 +51,7 @@ export const ContactList = () => {
   const totalResults = tableQueryResult?.data?.total ?? 0;
 
   const applyFilters = useCallback(
-    (search: string, status: string | undefined) => {
+    (search: string, status: string | undefined, programId: string | undefined) => {
       const filters: any[] = [];
       if (search.trim()) {
         filters.push({
@@ -63,6 +67,10 @@ export const ContactList = () => {
       if (status) {
         filters.push({ field: "status", operator: "eq", value: status });
       }
+      if (programId) {
+        // Filter contacts enrolled in this program
+        filters.push({ field: "enrollments.program_id", operator: "eq", value: Number(programId) });
+      }
       setFilters(filters, "replace");
     },
     [setFilters]
@@ -72,21 +80,27 @@ export const ContactList = () => {
     const value = e.target.value;
     setSearchText(value);
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => applyFilters(value, statusFilter), 300);
+    timerRef.current = setTimeout(() => applyFilters(value, statusFilter, programFilter), 300);
   };
 
   const handleStatusChange = (value: string | undefined) => {
     setStatusFilter(value);
-    applyFilters(searchText, value);
+    applyFilters(searchText, value, programFilter);
+  };
+
+  const handleProgramChange = (value: string | undefined) => {
+    setProgramFilter(value);
+    applyFilters(searchText, statusFilter, value);
   };
 
   const clearAll = () => {
     setSearchText("");
     setStatusFilter(undefined);
+    setProgramFilter(undefined);
     setFilters([], "replace");
   };
 
-  const hasFilters = !!searchText || !!statusFilter;
+  const hasFilters = !!searchText || !!statusFilter || !!programFilter;
 
   // ── Export ──────────────────────────────────────────────────────────────────
   const handleExport = async (ids?: number[]) => {
@@ -157,7 +171,7 @@ export const ContactList = () => {
             allowClear
             value={searchText}
             onChange={handleSearchChange}
-            onClear={() => { setSearchText(""); applyFilters("", statusFilter); }}
+            onClear={() => { setSearchText(""); applyFilters("", statusFilter, programFilter); }}
           />
         </Col>
         <Col xs={12} sm={6} md={5}>
@@ -168,9 +182,10 @@ export const ContactList = () => {
             value={statusFilter ?? null}
             onChange={(v) => handleStatusChange(v ?? undefined)}
             options={[
-              { label: "Lead",     value: "lead"     },
-              { label: "Active",   value: "active"   },
-              { label: "Inactive", value: "inactive" },
+              { label: "Active",     value: "active"     },
+              { label: "Dropped Off", value: "dropped off" },
+              { label: "Completed", value: "completed" },
+              { label: "Not Lead",   value: "not lead"   },
             ]}
           />
         </Col>
@@ -182,6 +197,8 @@ export const ContactList = () => {
             style={{ width: "100%" }}
             showSearch
             filterOption={false}
+            value={programFilter ? { label: programFilter, value: programFilter } : null}
+            onChange={(v: any) => handleProgramChange(v?.value ?? undefined)}
           />
         </Col>
         {hasFilters && (

@@ -421,12 +421,13 @@ const PersonalInfoSection = ({
       <Input.TextArea rows={2} />
     </Form.Item>
 
-    <Form.Item label="Status" name="status" initialValue="lead" rules={[{ required: true }]}>
+    <Form.Item label="Status" name="status" initialValue="active" rules={[{ required: true }]}>
       <Select
         options={[
-          { label: "Lead",     value: "lead"     },
-          { label: "Active",   value: "active"   },
-          { label: "Inactive", value: "inactive" },
+          { label: "Active",     value: "active"     },
+          { label: "Dropped Off",   value: "dropped off"   },
+          { label: "Completed", value: "completed" },
+          { label: "Not Lead", value: "not lead" },
         ]}
       />
     </Form.Item>

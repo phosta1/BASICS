@@ -23,7 +23,7 @@ import { BASICS_THEME } from "./brand";
 import { Dashboard } from "./pages/dashboard";
 import { ContactList, ContactCreate, ContactEdit, ContactShow } from "./pages/contacts";
 import { ProgramList, ProgramCreate, ProgramEdit, ProgramShow } from "./pages/programs";
-import { EnrollmentCreate, EnrollmentShow } from "./pages/enrollments";
+import { EnrollmentCreate, EnrollmentShow, EnrollmentEdit } from "./pages/enrollments";
 import { ContactFieldAdmin } from "./pages/admin/ContactFieldAdmin";
 import { UserManagement } from "./pages/admin/UserManagement";
 import { StaffDirectory } from "./pages/staff/StaffDirectory";
@@ -90,6 +90,11 @@ const AppRoutes = () => {
             </RoleGuard>
           } />
           <Route path="show/:id" element={<EnrollmentShow />} />
+          <Route path="edit/:id" element={
+            <RoleGuard requireEdit>
+              <EnrollmentEdit />
+            </RoleGuard>
+          } />
         </Route>
 
         {/* Admin-only pages */}
@@ -164,6 +169,7 @@ export default function App() {
                 name: "enrollments",
                 create: "/enrollments/create",
                 show: "/enrollments/show/:id",
+                edit: "/enrollments/edit/:id",
                 meta: { hide: true },
               },
               { name: "notes",                meta: { hide: true } },

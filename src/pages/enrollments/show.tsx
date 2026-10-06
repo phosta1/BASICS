@@ -7,7 +7,7 @@
 import { useOne, useList } from "@refinedev/core";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, Descriptions, Typography, Button, Spin, Divider, Image, Space } from "antd";
-import { ArrowLeftOutlined, FilePdfOutlined, FileOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, FilePdfOutlined, FileOutlined, EditOutlined } from "@ant-design/icons";
 import type { Enrollment, EnrollmentValue, ProgramField, Program, Contact } from "../../types";
 
 const { Title, Text } = Typography;
@@ -84,13 +84,21 @@ export const EnrollmentShow = () => {
 
   return (
     <div style={{ maxWidth: 800, margin: "0 auto" }}>
-      <Button
-        icon={<ArrowLeftOutlined />}
-        onClick={() => navigate(`/contacts/show/${enrollment?.contact_id}`)}
-        style={{ marginBottom: 16 }}
-      >
-        Back to {contact?.first_name} {contact?.last_name}
-      </Button>
+      <Space style={{ marginBottom: 16 }}>
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate(`/contacts/show/${enrollment?.contact_id}`)}
+        >
+          Back to {contact?.first_name} {contact?.last_name}
+        </Button>
+        <Button
+          type="primary"
+          icon={<EditOutlined />}
+          onClick={() => navigate(`/enrollments/edit/${enrollment?.id}`)}
+        >
+          Edit
+        </Button>
+      </Space>
 
       <Card style={{ marginBottom: 24 }}>
         <Title level={4}>{program?.name}</Title>

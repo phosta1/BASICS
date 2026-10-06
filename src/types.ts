@@ -12,7 +12,7 @@ export interface Contact {
   phone?: string;
   address?: string;
   // Categorisation
-  status: "lead" | "active" | "inactive";
+  status: "active" | "dropped off" | "completed" | "not lead";
   is_staff: boolean;          // triggers Staff Data section
   profile_picture_url?: string;
   // Cross-reference

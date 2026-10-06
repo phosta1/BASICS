@@ -10,7 +10,7 @@ import {
 import {
   PlusOutlined, UserOutlined, AppstoreOutlined, FileTextOutlined,
   EyeOutlined, DownloadOutlined, IdcardOutlined, SafetyOutlined,
-  CheckCircleOutlined, CloseCircleOutlined, TeamOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, TeamOutlined, EditOutlined,
 } from "@ant-design/icons";
 import { useRole } from "../../hooks/useRole";
 import { exportContacts } from "../../utils/exportContacts";
@@ -21,7 +21,10 @@ import type { Contact, Note, Enrollment, Program, ContactField, ContactFieldValu
 const { Title, Text } = Typography;
 
 const statusColor: Record<Contact["status"], string> = {
-  lead: "blue", active: "green", inactive: "default",
+  active: "green",
+  "dropped off": "red",
+  completed: "blue",
+  "not lead": "default",
 };
 
 export const ContactShow = () => {
@@ -392,15 +395,28 @@ export const ContactShow = () => {
                       </Space>
                     }
                     extra={
-                      <Tooltip title="View full enrollment">
-                        <Button
-                          type="link"
-                          size="small"
-                          icon={<EyeOutlined />}
-                          onClick={() => navigate(`/enrollments/show/${e.id}`)}
-                          style={{ padding: 0 }}
-                        />
-                      </Tooltip>
+                      <Space style={{ marginRight: -8 }}>
+                        {canEdit && (
+                          <Tooltip title="Edit enrollment">
+                            <Button
+                              type="link"
+                              size="small"
+                              icon={<EditOutlined />}
+                              onClick={() => navigate(`/enrollments/edit/${e.id}`)}
+                              style={{ padding: 0 }}
+                            />
+                          </Tooltip>
+                        )}
+                        <Tooltip title="View full enrollment">
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<EyeOutlined />}
+                            onClick={() => navigate(`/enrollments/show/${e.id}`)}
+                            style={{ padding: 0 }}
+                          />
+                        </Tooltip>
+                      </Space>
                     }
                     style={{
                       borderTop: `3px solid ${BASICS_COLORS.primary}`,
