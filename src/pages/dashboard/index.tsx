@@ -11,7 +11,7 @@ import {
 import dayjs, { type Dayjs } from "dayjs";
 import {
   TeamOutlined, AppstoreOutlined, CheckCircleOutlined,
-  RiseOutlined, UserOutlined, IdcardOutlined, FilterOutlined, CloseCircleOutlined,
+  RiseOutlined, UserOutlined, FilterOutlined, CloseCircleOutlined,
 } from "@ant-design/icons";
 import type { Contact, Program, Enrollment, ContactField, ContactFieldValue, ProgramField } from "../../types";
 import { PageHeader } from "../../components/BrandComponents";
@@ -33,7 +33,10 @@ const COLORS = [
 ];
 
 const statusColor: Record<string, string> = {
-  lead: BASICS_COLORS.gold, active: BASICS_COLORS.primary, inactive: "#9E9E9E",
+  active: BASICS_COLORS.primary,
+  "dropped off": "#FF4D4F",
+  completed: BASICS_COLORS.secondary,
+  "not lead": "#D3D3D3",
 };
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -104,7 +107,6 @@ export const Dashboard = () => {
   const activeContacts   = contacts.filter((c) => c.status === "active").length;
   const totalEnrollments = enrollments.length;
   const totalPrograms    = programs.length;
-  const totalStaff       = contacts.filter((c) => (c as any).is_staff).length;
 
   const programStats = programs.map((p, i) => ({
     id: p.id, name: p.name,
@@ -112,9 +114,12 @@ export const Dashboard = () => {
     color: COLORS[i % COLORS.length],
   })).sort((a, b) => b.count - a.count);
 
-  const statusGroups = ["lead","active","inactive"].map((s) => ({
-    status: s, count: contacts.filter((c) => c.status === s).length,
-  }));
+  const statusGroups = Array.from(
+    new Set(contacts.map((c) => c.status))
+  ).map((s) => ({
+    status: s,
+    count: contacts.filter((c) => c.status === s).length,
+  })).sort((a, b) => b.count - a.count);
 
   const recentContacts = contacts.slice(0, 8);
 
@@ -137,9 +142,6 @@ export const Dashboard = () => {
         );
       case "stat_total_programs":
         return <Card style={{ borderTop: `3px solid ${BASICS_COLORS.secondary}` }}><Statistic title={w.label} value={totalPrograms} prefix={<AppstoreOutlined style={{ color: BASICS_COLORS.secondary }} />} valueStyle={{ color: BASICS_COLORS.secondary }} /></Card>;
-      case "stat_total_staff":
-        return <Card style={{ borderTop: `3px solid ${BASICS_COLORS.primary}` }}><Statistic title={w.label} value={totalStaff} prefix={<IdcardOutlined style={{ color: BASICS_COLORS.primary }} />} valueStyle={{ color: BASICS_COLORS.primary }} /></Card>;
-
       case "stat_program_count": {
         const prog = programs.find((p) => p.id === w.program_id);
         const count = enrollments.filter((e) => e.program_id === w.program_id).length;

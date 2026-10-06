@@ -28,7 +28,6 @@ export type WidgetType =
   | "stat_active_contacts"
   | "stat_total_enrollments"
   | "stat_total_programs"
-  | "stat_total_staff"
   // Contact charts
   | "chart_status_donut"
   | "chart_program_bars"
@@ -65,7 +64,6 @@ const BUILT_IN_WIDGETS: Omit<DashboardWidget, "id" | "visible" | "col_span">[] =
   { type: "stat_active_contacts",   label: "Active Contacts"        },
   { type: "stat_total_enrollments", label: "Total Enrollments"      },
   { type: "stat_total_programs",    label: "Total Programs"         },
-  { type: "stat_total_staff",       label: "Total Staff"            },
   { type: "chart_status_donut",     label: "Contacts by Status"     },
   { type: "chart_program_bars",     label: "Enrollments per Program"},
   { type: "table_recent_contacts",  label: "Recent Contacts"        },
@@ -76,7 +74,6 @@ const WIDGET_ICON: Record<string, React.ReactNode> = {
   stat_active_contacts:                  <NumberOutlined />,
   stat_total_enrollments:                <NumberOutlined />,
   stat_total_programs:                   <NumberOutlined />,
-  stat_total_staff:                      <NumberOutlined />,
   stat_program_count:                    <NumberOutlined />,
   chart_status_donut:                    <PieChartOutlined />,
   chart_program_bars:                    <BarChartOutlined />,
