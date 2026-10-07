@@ -18,6 +18,7 @@ import { authProvider } from "./authProvider";
 import { RoleGuard, AdminOnly } from "./components/RoleGuard";
 import { BrandLogo } from "./components/BrandComponents";
 import { BASICS_THEME } from "./brand";
+import { useSessionTimeout } from "./hooks/useSessionTimeout";
 
 // Pages
 import { Dashboard } from "./pages/dashboard";
@@ -31,6 +32,7 @@ import { LoginPage } from "./pages/auth/login";
 
 // ── AppRoutes: rendered INSIDE <Refine>, so all Refine hooks are safe here ────
 const AppRoutes = () => {
+  useSessionTimeout(); // Activate session timeout monitoring
   return (
     <Routes>
       {/* ── Authenticated area ── */}
