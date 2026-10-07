@@ -3,6 +3,7 @@ import { useLogin } from "@refinedev/core";
 import { Form, Input, Button, Alert } from "antd";
 import { MailOutlined, LockOutlined } from "@ant-design/icons";
 import { BASICS_COLORS } from "../../brand";
+import { getUserFriendlyErrorMessage } from "../../utils/errorMessages";
 
 export const LoginPage = () => {
   const { mutate: login, isLoading } = useLogin<{ email: string; password: string }>();
@@ -12,7 +13,7 @@ export const LoginPage = () => {
     setError(null);
     login(values, {
       onError: (err: any) => {
-        setError(err?.message ?? "Invalid email or password.");
+        setError(getUserFriendlyErrorMessage(err));
       },
     });
   };

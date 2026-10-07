@@ -13,6 +13,7 @@ import {
   CheckCircleOutlined, CloseCircleOutlined, TeamOutlined, EditOutlined,
 } from "@ant-design/icons";
 import { useRole } from "../../hooks/useRole";
+import { getUserFriendlyErrorMessage } from "../../utils/errorMessages";
 import { exportContacts } from "../../utils/exportContacts";
 import { supabaseClient } from "../../supabaseClient";
 import { BASICS_COLORS } from "../../brand";
@@ -57,7 +58,7 @@ export const ContactShow = () => {
       await exportContacts([contact.id]);
       message.success("Contact exported successfully");
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : "Export failed");
+      message.error(getUserFriendlyErrorMessage(err));
     }
     setExporting(false);
   };

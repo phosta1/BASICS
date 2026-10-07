@@ -24,6 +24,7 @@ import {
 import { supabaseClient } from "../../supabaseClient";
 import { BASICS_COLORS } from "../../brand";
 import { PageHeader } from "../../components/BrandComponents";
+import { getUserFriendlyErrorMessage } from "../../utils/errorMessages";
 import type { UserProfile } from "../../types";
 
 const { Text } = Typography;
@@ -97,7 +98,7 @@ export const UserManagement = () => {
       .eq("id", userId);
 
     if (err) {
-      message.error(`Failed to update role: ${err.message}`);
+      message.error(getUserFriendlyErrorMessage(err));
     } else {
       message.success("Role updated successfully");
       setUsers((prev) =>
@@ -143,8 +144,8 @@ export const UserManagement = () => {
       form.resetFields();
       await fetchUsers();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      message.error(`Failed to invite user: ${msg}`);
+      const msg = getUserFriendlyErrorMessage(err);
+      message.error(msg);
     }
     setInviteLoading(false);
   };

@@ -13,6 +13,7 @@ import {
 } from "@ant-design/icons";
 import { usePermissions } from "../../hooks/usePermissions";
 import { exportContacts } from "../../utils/exportContacts";
+import { getUserFriendlyErrorMessage } from "../../utils/errorMessages";
 import { BASICS_COLORS } from "../../brand";
 import type { Contact, Program } from "../../types";
 
@@ -113,7 +114,7 @@ export const ContactList = () => {
           : "Exported all contacts"
       );
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : "Export failed");
+      message.error(getUserFriendlyErrorMessage(err));
     }
     setExporting(false);
   };
