@@ -29,6 +29,7 @@ import { ContactFieldAdmin } from "./pages/admin/ContactFieldAdmin";
 import { UserManagement } from "./pages/admin/UserManagement";
 import { StaffDirectory } from "./pages/staff/StaffDirectory";
 import { LoginPage } from "./pages/auth/login";
+import { SignupConfirm } from "./pages/auth/signup-confirm";
 
 // ── AppRoutes: rendered INSIDE <Refine>, so all Refine hooks are safe here ────
 const AppRoutes = () => {
@@ -112,7 +113,7 @@ const AppRoutes = () => {
         } />
       </Route>
 
-      {/* ── Public: Login ── */}
+      {/* ── Public: Login & Signup ── */}
       <Route
         element={
           <Authenticated key="auth-pages" fallback={<Outlet />}>
@@ -121,6 +122,7 @@ const AppRoutes = () => {
         }
       >
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup-confirm" element={<SignupConfirm />} />
       </Route>
     </Routes>
   );

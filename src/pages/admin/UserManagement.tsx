@@ -120,7 +120,7 @@ export const UserManagement = () => {
         password: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + "A1!",
         options: {
           // Prevent auto-login — the new user gets an email to set their own password
-          emailRedirectTo: window.location.origin + "/login",
+          emailRedirectTo: window.location.origin + "/signup-confirm",
         },
       });
 
