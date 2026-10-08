@@ -21,6 +21,7 @@ export const SignupConfirm = () => {
       try {
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
 
         if (!accessToken) {
           setError("Invalid signup link. Please try inviting the user again.");
@@ -28,9 +29,13 @@ export const SignupConfirm = () => {
           return;
         }
 
-        // Verify the session with the token
-        const { data, error: err } = await supabaseClient.auth.getSession();
-        if (err || !data.session) {
+        // Set the session directly from the token
+        const { error: sessionErr } = await supabaseClient.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || "",
+        });
+
+        if (sessionErr) {
           setError("Your signup link has expired. Please request a new invite.");
           setLoading(false);
           return;
@@ -65,6 +70,24 @@ export const SignupConfirm = () => {
       if (err) {
         setError(getUserFriendlyErrorMessage(err));
       } else {
+        // Create user_profiles entry for the new user
+        const { data: userData } = await supabaseClient.auth.getUser();
+        if (userData.user) {
+          const { error: profileErr } = await supabaseClient
+            .from('user_profiles')
+            .insert([
+              {
+                id: userData.user.id,
+                email: userData.user.email,
+                role: 'viewer',  // Default new users to viewer role
+                created_at: new Date().toISOString(),
+              }
+            ]);
+
+          if (profileErr && profileErr.code !== '23505') {  // 23505 = unique violation (already exists)
+            console.error('Failed to create user profile:', profileErr);
+          }
+        }
         setSuccess(true);
         setTimeout(() => {
           navigate("/");
