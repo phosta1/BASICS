@@ -25,7 +25,9 @@ import { Dashboard } from "./pages/dashboard";
 import { ContactList, ContactCreate, ContactEdit, ContactShow } from "./pages/contacts";
 import { ProgramList, ProgramCreate, ProgramEdit, ProgramShow } from "./pages/programs";
 import { EnrollmentCreate, EnrollmentShow, EnrollmentEdit } from "./pages/enrollments";
+import { SponsorList, SponsorShow } from "./pages/sponsors";
 import { ContactFieldAdmin } from "./pages/admin/ContactFieldAdmin";
+import { SponsorFieldAdmin } from "./pages/admin/SponsorFieldAdmin";
 import { UserManagement } from "./pages/admin/UserManagement";
 import { StaffDirectory } from "./pages/staff/StaffDirectory";
 import { LoginPage } from "./pages/auth/login";
@@ -66,7 +68,7 @@ const AppRoutes = () => {
           <Route path="show/:id" element={<ContactShow />} />
         </Route>
 
-        {/* Programs */}
+        {/* Programs - Admin and Editors can create/edit/delete */}
         <Route path="/programs">
           <Route index element={<ProgramList />} />
           <Route path="create" element={
@@ -80,6 +82,20 @@ const AppRoutes = () => {
             </RoleGuard>
           } />
           <Route path="show/:id" element={<ProgramShow />} />
+        </Route>
+
+        {/* Sponsors - Admin only */}
+        <Route path="/sponsors">
+          <Route index element={
+            <AdminOnly>
+              <SponsorList />
+            </AdminOnly>
+          } />
+          <Route path="show/:id" element={
+            <AdminOnly>
+              <SponsorShow />
+            </AdminOnly>
+          } />
         </Route>
 
         {/* Staff Directory */}
@@ -104,6 +120,11 @@ const AppRoutes = () => {
         <Route path="/admin/contact-fields" element={
           <AdminOnly>
             <ContactFieldAdmin />
+          </AdminOnly>
+        } />
+        <Route path="/admin/sponsor-fields" element={
+          <AdminOnly>
+            <SponsorFieldAdmin />
           </AdminOnly>
         } />
         <Route path="/admin/users" element={
@@ -170,6 +191,12 @@ export default function App() {
                 meta: { label: "Staff Directory", icon: <IdcardOutlined /> },
               },
               {
+                name: "sponsors",
+                list: "/sponsors",
+                show: "/sponsors/show/:id",
+                meta: { label: "Sponsors", icon: <AppstoreOutlined /> },
+              },
+              {
                 name: "enrollments",
                 create: "/enrollments/create",
                 show: "/enrollments/show/:id",
@@ -179,6 +206,7 @@ export default function App() {
               { name: "notes",                meta: { hide: true } },
               { name: "program_fields",       meta: { hide: true } },
               { name: "contact_fields",       meta: { hide: true } },
+              { name: "sponsor_fields",       meta: { hide: true } },
               { name: "contact_field_values", meta: { hide: true } },
               { name: "enrollment_values",    meta: { hide: true } },
               { name: "user_profiles",        meta: { hide: true } },
@@ -186,6 +214,11 @@ export default function App() {
                 name: "admin_contact_fields",
                 list: "/admin/contact-fields",
                 meta: { label: "Contact Field Builder", icon: <SettingOutlined /> },
+              },
+              {
+                name: "admin_sponsor_fields",
+                list: "/admin/sponsor-fields",
+                meta: { label: "Sponsor Field Builder", icon: <SettingOutlined /> },
               },
               {
                 name: "admin_users",

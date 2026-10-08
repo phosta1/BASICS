@@ -134,3 +134,22 @@ export interface Deal {
   close_date?: string;
   created_at: string;
 }
+
+// ── Sponsors ──────────────────────────────────────────────────────────────────
+export interface Sponsor {
+  id: number;
+  [key: string]: any;  // Dynamic fields based on sponsor_fields schema
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SponsorField {
+  id: number;
+  label: string;
+  field_key: string;       // snake_case, used as storage key
+  field_type: FieldType;
+  options?: string[];      // for select fields
+  required: boolean;
+  sort_order: number;
+  created_at: string;
+}

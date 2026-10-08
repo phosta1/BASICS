@@ -6,10 +6,10 @@
 import { useState } from "react";
 import {
   Table, Button, Form, Input, Select, Switch,
-  Popconfirm, Tag, Typography, Divider,
+  Tag, Typography, Divider, message,
 } from "antd";
-import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
-import { useCreate, useDelete, useList } from "@refinedev/core";
+import { PlusOutlined } from "@ant-design/icons";
+import { useCreate, useDelete, useList, useUpdate } from "@refinedev/core";
 import type { FieldType, ProgramField, ContactField } from "../types";
 
 const { Text } = Typography;
@@ -38,9 +38,18 @@ const typeTag: Record<FieldType, string> = {
   date: "purple", select: "orange", file: "green",
 };
 
+interface FieldFormValues {
+  label: string;
+  field_type: FieldType;
+  required: boolean;
+  options_raw?: string;
+}
+
 export const FieldBuilder = ({ resource, programId, title = "Fields" }: Props) => {
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
   const [showSelectOptions, setShowSelectOptions] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const filters =
     resource === "program_fields" && programId
@@ -56,15 +65,11 @@ export const FieldBuilder = ({ resource, programId, title = "Fields" }: Props) =
 
   const { mutate: createField, isLoading: isCreating } = useCreate();
   const { mutate: deleteField } = useDelete();
+  const { mutate: updateField } = useUpdate();
 
   const fields = data?.data ?? [];
 
-  const handleAdd = (values: {
-    label: string;
-    field_type: FieldType;
-    required: boolean;
-    options_raw?: string;
-  }) => {
+  const handleAdd = (values: FieldFormValues) => {
     const field_key = values.label
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
@@ -81,17 +86,205 @@ export const FieldBuilder = ({ resource, programId, title = "Fields" }: Props) =
       field_type: values.field_type,
       required: values.required ?? false,
       sort_order: fields.length,
-      options,
     };
+    if (options) payload.options = options;
     if (resource === "program_fields" && programId) {
       payload.program_id = programId;
     }
 
     createField(
       { resource, values: payload },
-      { onSuccess: () => { form.resetFields(); setShowSelectOptions(false); refetch(); } }
+      { 
+        onSuccess: () => { 
+          message.success("Field added successfully");
+          form.resetFields();
+          setShowSelectOptions(false);
+          refetch(); 
+        },
+        onError: (error) => {
+          message.error("Failed to add field");
+          console.error(error);
+        }
+      }
     );
   };
+
+  const handleEditStart = (field: AnyField) => {
+    setEditingId(field.id);
+    editForm.setFieldsValue({
+      label: field.label,
+      field_type: field.field_type,
+      required: field.required,
+      options_raw: field.options ? field.options.join(", ") : "",
+    });
+  };
+
+  const handleEditSave = (id: number, values: FieldFormValues) => {
+    const options =
+      values.field_type === "select" && values.options_raw
+        ? values.options_raw.split(",").map((o) => o.trim()).filter(Boolean)
+        : null;
+
+    const payload: Record<string, unknown> = {
+      label: values.label,
+      field_type: values.field_type,
+      required: values.required,
+    };
+
+    if (options) payload.options = options;
+
+    updateField(
+      { resource, id, values: payload },
+      {
+        onSuccess: () => {
+          message.success("Field updated successfully");
+          setEditingId(null);
+          refetch();
+        },
+        onError: (error) => {
+          message.error("Failed to update field");
+          console.error(error);
+        },
+      }
+    );
+  };
+
+  const handleDelete = (id: number) => {
+    if (!window.confirm("Delete this field? Existing answers will also be deleted.")) return;
+    deleteField(
+      { resource, id },
+      {
+        onSuccess: () => {
+          message.success("Field deleted successfully");
+          refetch();
+        },
+        onError: (error) => {
+          message.error("Failed to delete field");
+          console.error(error);
+        },
+      }
+    );
+  };
+
+  const columns = [
+    {
+      title: "Label",
+      dataIndex: "label",
+      key: "label",
+      render: (text: string, record: AnyField) => {
+        if (editingId !== record.id) return text;
+        return (
+          <Form form={editForm} layout="inline">
+            <Form.Item name="label" style={{ marginBottom: 0 }}>
+              <Input size="small" />
+            </Form.Item>
+          </Form>
+        );
+      },
+    },
+    {
+      title: "Type",
+      dataIndex: "field_type",
+      key: "field_type",
+      render: (type: FieldType, record: AnyField) => {
+        if (editingId !== record.id) {
+          return <Tag color={typeTag[type]}>{type}</Tag>;
+        }
+        return (
+          <Form form={editForm} layout="inline">
+            <Form.Item name="field_type" style={{ marginBottom: 0 }}>
+              <Select size="small" options={FIELD_TYPES} style={{ width: 100 }} />
+            </Form.Item>
+          </Form>
+        );
+      },
+    },
+    {
+      title: "Required",
+      dataIndex: "required",
+      key: "required",
+      render: (required: boolean, record: AnyField) => {
+        if (editingId !== record.id) return required ? "Yes" : "No";
+        return (
+          <Form form={editForm} layout="inline">
+            <Form.Item name="required" valuePropName="checked" style={{ marginBottom: 0 }}>
+              <Switch size="small" />
+            </Form.Item>
+          </Form>
+        );
+      },
+      width: 80,
+    },
+    {
+      title: "Options",
+      dataIndex: "options",
+      key: "options",
+      render: (options: string[] | null, record: AnyField) => {
+        if (editingId !== record.id) {
+          if (!options) return "-";
+          return options.join(", ");
+        }
+        return (
+          <Form form={editForm} layout="inline">
+            <Form.Item name="options_raw" style={{ marginBottom: 0 }}>
+              <Input size="small" placeholder="comma, separated" />
+            </Form.Item>
+          </Form>
+        );
+      },
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      width: 200,
+      render: (_: any, record: AnyField) => {
+        if (editingId !== record.id) {
+          return (
+            <>
+              <Button
+                type="primary"
+                size="small"
+                onClick={() => handleEditStart(record)}
+                style={{ marginRight: 8 }}
+              >
+                Edit
+              </Button>
+              <Button
+                type="primary"
+                danger
+                size="small"
+                onClick={() => handleDelete(record.id)}
+              >
+                Delete
+              </Button>
+            </>
+          );
+        }
+        return (
+          <>
+            <Button
+              type="primary"
+              size="small"
+              onClick={() => {
+                editForm.validateFields().then((values) => {
+                  handleEditSave(record.id, values);
+                });
+              }}
+              style={{ marginRight: 8 }}
+            >
+              Save
+            </Button>
+            <Button
+              size="small"
+              onClick={() => setEditingId(null)}
+            >
+              Cancel
+            </Button>
+          </>
+        );
+      },
+    },
+  ];
 
   return (
     <div>
@@ -101,49 +294,13 @@ export const FieldBuilder = ({ resource, programId, title = "Fields" }: Props) =
       {/* Existing fields table */}
       <Table<AnyField>
         dataSource={fields}
+        columns={columns}
         rowKey="id"
         size="small"
         pagination={false}
         style={{ marginBottom: 24 }}
         locale={{ emptyText: "No fields yet — add one below" }}
-      >
-        <Table.Column dataIndex="label" title="Label" />
-        <Table.Column
-          dataIndex="field_type"
-          title="Type"
-          render={(v: FieldType) => (
-            <Tag color={typeTag[v]}>{v.toUpperCase()}</Tag>
-          )}
-        />
-        <Table.Column
-          dataIndex="required"
-          title="Required"
-          render={(v: boolean) => (v ? <Tag color="red">Yes</Tag> : <Tag>No</Tag>)}
-        />
-        <Table.Column
-          dataIndex="options"
-          title="Options"
-          render={(v: string[] | null) =>
-            v?.length ? v.join(", ") : <Text type="secondary">—</Text>
-          }
-        />
-        <Table.Column
-          title=""
-          render={(_: unknown, record: AnyField) => (
-            <Popconfirm
-              title="Delete this field? Existing answers will also be deleted."
-              onConfirm={() =>
-                deleteField(
-                  { resource, id: record.id },
-                  { onSuccess: () => refetch() }
-                )
-              }
-            >
-              <Button danger icon={<DeleteOutlined />} size="small" />
-            </Popconfirm>
-          )}
-        />
-      </Table>
+      />
 
       {/* Add field form */}
       <Form form={form} layout="inline" onFinish={handleAdd} style={{ flexWrap: "wrap", gap: 8 }}>

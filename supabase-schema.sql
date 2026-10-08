@@ -148,6 +148,42 @@ create table if not exists public.notes (
   created_at  timestamptz not null default now()
 );
 
+-- ── 6b. Sponsors ──────────────────────────────────────────────────────────────
+-- Base sponsors table (dynamic fields configured by admin)
+create table if not exists public.sponsors (
+  id          bigserial   primary key,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- Sponsor field definitions (configurable by admin)
+-- Same structure as contact_fields - admin defines what fields appear on sponsor forms
+create table if not exists public.sponsor_fields (
+  id          bigserial   primary key,
+  label       text        not null,
+  field_key   text        not null unique,
+  field_type  text        not null
+                check (field_type in ('text','textarea','number','date','select','file')),
+  options     jsonb,           -- string array for 'select' type
+  required    boolean     not null default false,
+  sort_order  int         not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+-- Insert default sponsor fields
+insert into public.sponsor_fields (label, field_key, field_type, required, sort_order)
+values
+  ('Sponsor Name', 'sponsor_name', 'text', true, 1),
+  ('Sponsor Email', 'sponsor_email', 'text', true, 2),
+  ('Sponsor Phone Number', 'sponsor_phone', 'text', false, 3),
+  ('Sponsor Address', 'sponsor_address', 'text', false, 4),
+  ('Sponsorship Type', 'sponsorship_type', 'select', false, 5)
+on conflict (field_key) do nothing;
+
+-- Store sponsor field values as JSONB on the sponsor record
+-- (Update sponsors table to include a jsonb column for dynamic fields)
+alter table public.sponsors add column if not exists data jsonb default '{}';
+
 -- ── 7. Indexes ────────────────────────────────────────────────────────────────
 create index if not exists contact_field_values_contact_idx on public.contact_field_values(contact_id);
 create index if not exists enrollments_contact_idx          on public.enrollments(contact_id);
@@ -166,6 +202,8 @@ alter table public.enrollments          enable row level security;
 alter table public.enrollment_values    enable row level security;
 alter table public.notes                enable row level security;
 alter table public.staff_profiles       enable row level security;
+alter table public.sponsors             enable row level security;
+alter table public.sponsor_fields       enable row level security;
 
 -- Helper function: breaks the recursive RLS loop by running as DB owner
 -- (security definer bypasses RLS when checking the caller's own role)
